@@ -120,192 +120,140 @@
         <i id="audio-icon" class="text-white fa-solid fa-volume-xmark"></i>
     </button>
     <script>
-        // --- MODULE QUẢN LÝ ÂM THANH ---
-        const musicManager = {
-            // Properties
-            audio: null,
-            state: 'idle', // idle, loading, ready, playing, paused, muted, error
-            tokenData: null,
 
-            // --- Core Functions ---
-            _setupAudio() {
-                let audioSrc = window.dataLove2Loveloom?.data?.backgroundMusic;
-                if (!audioSrc) { // Nhạc dự phòng cuối cùng
-                    audioSrc = 'https://raw.githubusercontent.com/IPPO34/planeta1/main/storage/musics/anhnangcuaanh.mp3';
-                }
-                console.log('Intentando cargar audio desde:', audioSrc);
-                this.audio = new Audio(audioSrc);
-                const isCrossOrigin = /^(https?:)?\/\//.test(audioSrc) && new URL(audioSrc).origin !== window.location.origin;
-                if (isCrossOrigin) {
-                    this.audio.crossOrigin = "anonymous";
-                }
-                this.audio.loop = true;
-                this.audio.volume = 0.7;
-                this.attachEventListeners();
-                window.galaxyAudio = this.audio; // Gán vào global để script.js dùng
-                this.updateState('ready'); // Báo rằng nhạc đã sẵn sàng để phát
-            },
+const musicManager = {
+    audio: null,
+    state: 'idle',
+    tokenData: null,
 
-            async init() {
-                const musicData = window.dataLove2Loveloom.data;
-                this.updateState('loading'); // Luôn bắt đầu với trạng thái loading
+    _setupAudio() {
+        // Intentamos usar la música del JSON si existe
+        let audioSrc = window.dataLove2Loveloom?.data?.backgroundMusic;
 
-                if (musicData.type_music === 'system') {
-                    this._setupAudio(); // Tạo audio ngay lập tức với nhạc hệ thống
-                } else if (musicData.type_music === 'zing' && musicData.music_id) {
-                    try {
-                        const res = await this.fetchWithAuth(`/get-song?id=${musicData.music_id}`);
-                        if (!res.ok) throw new Error('Response not OK');
-                        const songInfo = await res.json();
-                        const mp3Url = songInfo.stream?.['128'];
+        // Si no existe o está vacía, usamos nuestra música local en GitHub Pages
+        if (!audioSrc || audioSrc.trim() === '') {
+            // Usa la ruta completa al archivo en GitHub Pages (100% compatible)
+            audioSrc = 'https://ippo34.github.io/planeta1/storage/musics/anhnangcuaanh.mp3';
+        }
 
-                        if (mp3Url) {
-                            window.dataLove2Loveloom.data.backgroundMusic = mp3Url;
-                            this._setupAudio(); // Tạo audio sau khi lấy link Zing thành công
-                        } else {
-                            console.error('Không tìm thấy link MP3 128kbps, dùng nhạc dự phòng.');
-                            this._setupAudio(); // Lỗi -> Dùng nhạc dự phòng
-                        }
-                    } catch (error) {
-                        console.error('Lỗi khi lấy nhạc từ Zing:', error);
-                        this.updateState('error');
-                        this._setupAudio(); // Lỗi -> Dùng nhạc dự phòng
-                    }
-                } else {
-                    this._setupAudio(); // Trường hợp mặc định
-                }
-            },
+        console.log('🎵 Intentando cargar audio desde:', audioSrc);
 
-            play() {
-                // Hàm này giờ chỉ để script.js gọi, đảm bảo nhạc phát khi intro bắt đầu
-                if (this.audio && this.audio.paused) {
-                    // Trả về một Promise để bên ngoài có thể xử lý lỗi
-                    return this.audio.play();
-                }
-                // Nếu nhạc đã phát hoặc không tồn tại, trả về một Promise đã hoàn thành
-                return Promise.resolve();
-            },
+        this.audio = new Audio(audioSrc);
 
-            // Hàm mới để bật/tắt nhạc từ nút điều khiển
-            togglePlayback() {
-                if (!this.audio || this.state === 'loading' || this.state === 'error') {
-                    console.warn("Nhạc chưa sẵn sàng hoặc đang lỗi.");
-                    return;
-                }
+        // Si la ruta es externa, activamos CORS
+        const isCrossOrigin = /^(https?:)?\/\//.test(audioSrc) && new URL(audioSrc).origin !== window.location.origin;
+        if (isCrossOrigin) {
+            this.audio.crossOrigin = "anonymous";
+        }
 
-                // Nếu nhạc đang bị tắt tiếng, ưu tiên bật tiếng trước
-                if (this.audio.muted) {
-                    this.audio.muted = false;
-                }
+        this.audio.loop = true;
+        this.audio.volume = 0.7;
+        this.attachEventListeners();
+        window.galaxyAudio = this.audio;
+        this.updateState('ready');
+    },
 
-                // Sau đó mới xử lý play/pause
-                if (this.audio.paused) {
-                    this.audio.play();
-                } else {
-                    this.audio.pause();
-                }
-            },
+    async init() {
+        const musicData = window.dataLove2Loveloom?.data || {};
+        this.updateState('loading');
 
-
-            // --- UI & State Management ---
-            updateState(newState) {
-                this.state = newState;
-                // Chỉ ẩn loader khi không còn loading nữa
-                if (newState !== 'loading') {
-                    const loader = document.getElementById('music-loader');
-                    if (loader) loader.style.display = 'none';
-                }
-                this.updateUI();
-            },
-
-            updateUI() {
-                const audioIcon = document.getElementById('audio-icon');
-                if (!audioIcon) return;
-
-                // Cập nhật icon dựa trên trạng thái paused
-                if (!this.audio || this.audio.paused) {
-                    audioIcon.classList.remove("fa-volume-high");
-                    audioIcon.classList.add("fa-volume-xmark");
-                } else {
-                    audioIcon.classList.remove("fa-volume-xmark");
-                    audioIcon.classList.add("fa-volume-high");
-                }
-            },
-
-            attachEventListeners() {
-                if (!this.audio) return;
-                this.audio.onplay = () => this.updateState('playing');
-                this.audio.onpause = () => this.updateState('paused');
-                this.audio.onvolumechange = () => this.updateUI(); // Cập nhật UI nếu có thay đổi volume
-            },
-
-            // Các hàm fetchWithAuth và getToken giữ nguyên...
-            async getToken() {
-                try {
-                    const res = await fetch('/token-api-mp3');
-                    if (!res.ok) throw new Error('Không lấy được token');
-                    const data = await res.json();
-                    this.tokenData = data;
-                    return this.tokenData;
-                } catch (err) {
-                    console.error('Lỗi lấy token:', err);
-                    return null;
-                }
-            },
-            async fetchWithAuth(url) {
-                await this.getToken();
-
-                if (!this.tokenData) throw new Error('Không có token xác thực');
-
-                const headers = {
-                    'X-Auth-Token': this.tokenData.token,
-                    'X-Auth-Timestamp': this.tokenData.timestamp,
-                    'X-Client-Key': this.tokenData.clientKey,
-                    'X-Auth-Nonce': this.tokenData.nonce,
-                };
-
-                let res = await fetch(url, {
-                    headers
-                });
-
-                if (!res.ok) {
-                    const errorText = await res.text();
-                    console.error(`Lỗi response (${res.status}):`, errorText);
-                    if (res.status === 403) {
-                        await this.getToken();
-                        if (!this.tokenData) throw new Error('Không có token xác thực');
-
-                        const newHeaders = {
-                            'X-Auth-Token': this.tokenData.token,
-                            'X-Auth-Timestamp': this.tokenData.timestamp,
-                            'X-Client-Key': this.tokenData.clientKey,
-                            'X-Auth-Nonce': this.tokenData.nonce,
-                        };
-
-                        res = await fetch(url, {
-                            headers: newHeaders
-                        });
-
-                        if (!res.ok) {
-                            const errText = await res.text();
-                            throw new Error(`Request lỗi sau khi refresh token: ${res.status}`);
-                        }
-                    } else {
-                        throw new Error(`Request lỗi: ${res.status}`);
-                    }
-                }
-
-                return res;
+        try {
+            if (musicData.type_music === 'zing' && musicData.music_id) {
+                const res = await this.fetchWithAuth(`/get-song?id=${musicData.music_id}`);
+                if (!res.ok) throw new Error('Response not OK');
+                const songInfo = await res.json();
+                const mp3Url = songInfo.stream?.['128'];
+                window.dataLove2Loveloom.data.backgroundMusic = mp3Url || null;
             }
+        } catch (e) {
+            console.warn('⚠️ No se pudo obtener música externa, usando archivo local.');
+        }
+
+        this._setupAudio();
+    },
+
+    play() {
+        if (this.audio && this.audio.paused) {
+            return this.audio.play();
+        }
+        return Promise.resolve();
+    },
+
+    togglePlayback() {
+        if (!this.audio || this.state === 'loading' || this.state === 'error') return;
+        if (this.audio.muted) this.audio.muted = false;
+        if (this.audio.paused) this.audio.play();
+        else this.audio.pause();
+    },
+
+    updateState(newState) {
+        this.state = newState;
+        if (newState !== 'loading') {
+            const loader = document.getElementById('music-loader');
+            if (loader) loader.style.display = 'none';
+        }
+        this.updateUI();
+    },
+
+    updateUI() {
+        const audioIcon = document.getElementById('audio-icon');
+        if (!audioIcon) return;
+        if (!this.audio || this.audio.paused) {
+            audioIcon.classList.remove("fa-volume-high");
+            audioIcon.classList.add("fa-volume-xmark");
+        } else {
+            audioIcon.classList.remove("fa-volume-xmark");
+            audioIcon.classList.add("fa-volume-high");
+        }
+    },
+
+    attachEventListeners() {
+        if (!this.audio) return;
+        this.audio.onplay = () => this.updateState('playing');
+        this.audio.onpause = () => this.updateState('paused');
+        this.audio.onvolumechange = () => this.updateUI();
+    },
+
+    async getToken() {
+        try {
+            const res = await fetch('/token-api-mp3');
+            if (!res.ok) throw new Error('No se pudo obtener token');
+            const data = await res.json();
+            this.tokenData = data;
+            return this.tokenData;
+        } catch (err) {
+            console.error('Error obteniendo token:', err);
+            return null;
+        }
+    },
+
+    async fetchWithAuth(url) {
+        await this.getToken();
+        if (!this.tokenData) throw new Error('Sin token');
+
+        const headers = {
+            'X-Auth-Token': this.tokenData.token,
+            'X-Auth-Timestamp': this.tokenData.timestamp,
+            'X-Client-Key': this.tokenData.clientKey,
+            'X-Auth-Nonce': this.tokenData.nonce,
         };
 
-        document.addEventListener('DOMContentLoaded', () => {
-            window.musicManager = musicManager;
-            musicManager.init();
+        let res = await fetch(url, { headers });
+        if (!res.ok) throw new Error(`Error en request: ${res.status}`);
+        return res;
+    }
+};
 
-            const toggleBtn = document.getElementById("toggle-audio");
-            toggleBtn.addEventListener("click", () => musicManager.togglePlayback());
-        });
+document.addEventListener('DOMContentLoaded', () => {
+    window.musicManager = musicManager;
+    musicManager.init();
+
+    const toggleBtn = document.getElementById("toggle-audio");
+    if (toggleBtn) {
+        toggleBtn.addEventListener("click", () => musicManager.togglePlayback());
+    }
+});
+
 
         // let tokenData = null;
         // async function getToken() {
